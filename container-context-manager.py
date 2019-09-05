@@ -6,7 +6,8 @@ CLIENT = docker.Client(version="1.22")
 
 
 class Container:
-    def __init__(self, tag, agent=False, ports=None):
+    def __init__(self, image, tag, agent=False, ports=None):
+        self.image = image
         self.tag = tag
         self.name = uuid4()
         self.ports = ports or {}
@@ -22,8 +23,8 @@ class Container:
         )
         self._inst = CLIENT.create_container(
             detach=False,
-            host_config=CLIENT.create_host_config(binds=volumes, port_bindings=ports),
-            image=f"ch-d:{self.tag}",
+            host_config=CLIENT.create_host_config(binds=volumes, port_bindings=self.ports),
+            image=f"{self.image}:{self.tag}",
             ports=list(self.ports.keys()),
         )
         CLIENT.start(container=self._inst)
@@ -81,7 +82,7 @@ class Container:
     def rex_setup(self, host=None):
         self.execute("mkdir /root/.ssh")
         return self.execute(
-            f"curl -ko /root/.ssh/authorized_keys https://{host or self.host}:9090/ssh/pubkey"
+            f"curl -ko /root/.ssh/authorized_keys https://{host or self._host}:9090/ssh/pubkey"
         )
 
 
