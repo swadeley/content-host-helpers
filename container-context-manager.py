@@ -2,11 +2,13 @@ import docker
 import random
 from uuid import uuid4
 
-CLIENT = docker.Client(version="1.22")
 
-
-class Container:
+class DockerContainer:
     def __init__(self, image, tag, agent=False, ports=None):
+        """Gather information needed to spin up a Docker-based container."""
+        import docker.api.container
+
+        self._client = docker.Client(version="1.22")
         self.image = image
         self.tag = tag
         self.name = uuid4()
@@ -21,26 +23,30 @@ class Container:
         volumes = (
             {"/dev/log": {"bind": "/dev/log", "mode": "rw"}} if self._mount else {}
         )
-        self._inst = CLIENT.create_container(
+        self._inst = self._client.create_container(
             detach=False,
-            host_config=CLIENT.create_host_config(binds=volumes, port_bindings=self.ports),
+            host_config=self._client.create_host_config(
+                binds=volumes, port_bindings=self.ports
+            ),
             image=f"{self.image}:{self.tag}",
             ports=list(self.ports.keys()),
         )
-        CLIENT.start(container=self._inst)
+        self._client.start(container=self._inst)
 
     def delete(self):
         print(f"Deleting {self.name}")
-        CLIENT.remove_container(self._inst, v=True, force=True)
+        self._client.remove_container(self._inst, v=True, force=True)
 
     def execute(self, command):
-        exec_inst = CLIENT.exec_create(container=self._inst, cmd=command, stdout=True)
+        exec_inst = self._client.exec_create(
+            container=self._inst, cmd=command, stdout=True
+        )
         print(f"{self.name} is executing: {command}")
-        return CLIENT.exec_start(exec_id=exec_inst).decode()
+        return self._client.exec_start(exec_id=exec_inst).decode()
 
     def logs(self, file="stdout", tailing=False):
         if file == "stdout":
-            current = CLIENT.logs(self._inst["Id"])
+            current = self._client.logs(self._inst["Id"])
         else:
             current = self.execute(f"cat {file}")
         if isinstance(current, bytes):
@@ -49,7 +55,34 @@ class Container:
         return current.replace(self._logs.get(file, ""), "") if tailing else current
 
     def port(self):
-        return CLIENT.port(self._inst["Id"], 22)[0]["HostPort"]
+        return self._client.port(self._inst["Id"], 22)[0]["HostPort"]
+
+
+class Container:
+    def __init__(
+        self, runtime="docker", image="ch-d", tag="rhel7", agent=False, ports=None
+    ):
+        self.name = uuid4()
+        if runtime == "docker":
+            ContainerClass = DockerContainer
+        # elif runtime == "podman":
+        #     ContainerClass = PodmanContainer
+        else:
+            print("Invalid runtime selection")
+        self._inst = ContainerClass(image=image, tag=tag, agent=agent, ports=ports)
+        self._logs = self._inst._logs
+
+    def delete(self):
+        return self._inst.delete()
+
+    def execute(self, command):
+        return self._inst.execute(command)
+
+    def logs(self, file="stdout", tailing=False):
+        return self._inst.logs(file, tailing)
+
+    def port(self):
+        return self._inst.port()
 
     def register(
         self,
@@ -61,10 +94,12 @@ class Container:
         force=False,
     ):
         self._host = host
-        res = self.execute(
+        res = self._inst.execute(
             f"curl --insecure --output katello-ca-consumer-latest.noarch.rpm https://{host}/pub/katello-ca-consumer-latest.noarch.rpm"
         )
-        res += self.execute("yum -y localinstall katello-ca-consumer-latest.noarch.rpm")
+        res += self._inst.execute(
+            "yum -y localinstall katello-ca-consumer-latest.noarch.rpm"
+        )
         if "Complete!" not in res:
             print("Unable to install bootstrap rpm")
             return res
@@ -72,32 +107,37 @@ class Container:
         if force:
             reg_command += " --force"
         if ak:
-            res += self.execute(f'{reg_command} --activationkey="{ak}"')
+            res += self._inst.execute(f'{reg_command} --activationkey="{ak}"')
         else:
-            res += self.execute(
+            res += self._inst.execute(
                 f'{reg_command} --user="{auth[0]}" --password="{auth[1]}" --environment="{env}"'
             )
         return res
 
     def rex_setup(self, host=None):
-        self.execute("mkdir /root/.ssh")
-        return self.execute(
+        self._inst.execute("mkdir /root/.ssh")
+        return self._inst.execute(
             f"curl -ko /root/.ssh/authorized_keys https://{host or self._host}:9090/ssh/pubkey"
         )
 
 
 class ContainerHost:
-    def __init__(self, tag="rhel7", count=1, mount_rhsm_log=False):
+    def __init__(
+        self, runtime="docker", image="ch-d", tag="rhel7", count=1, mount_rhsm_log=False
+    ):
         if isinstance(tag, list):
             self.container = {}
             for _tag in tag:
                 self.container[_tag] = [
-                    Container(_tag, mount_rhsm_log) for _ in range(count)
+                    Container(runtime, image, _tag, mount_rhsm_log)
+                    for _ in range(count)
                 ]
                 if len(self.container[_tag]) == 1:
                     self.container[_tag] = self.container[_tag][0]
         else:
-            self.container = [Container(tag, mount_rhsm_log) for _ in range(count)]
+            self.container = [
+                Container(runtime, image, tag, mount_rhsm_log) for _ in range(count)
+            ]
 
     def __enter__(self):
         return self.container if len(self.container) > 1 else self.container[0]
