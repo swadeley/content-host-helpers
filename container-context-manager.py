@@ -30,6 +30,7 @@ class DockerContainer:
             ),
             image=f"{self.image}:{self.tag}",
             ports=list(self.ports.keys()),
+            command="tail -f /var/log/rhsm/rhsm.log",
         )
         self._client.start(container=self._inst)
 
