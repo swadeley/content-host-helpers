@@ -1,11 +1,11 @@
-import docker
 import random
 from uuid import uuid4
 
 
 class DockerContainer:
-    def __init__(self, image, tag, agent=False, ports=None):
+    def __init__(self, image, tag, agent, ports):
         """Gather information needed to spin up a Docker-based container."""
+        import docker
         import docker.api.container
 
         self._client = docker.Client(version="1.22")
@@ -19,7 +19,7 @@ class DockerContainer:
         self._create()
 
     def _create(self):
-        print("Creating {} container named {}".format(self.tag, self.name))
+        print(f"Creating {self.tag} container named {self.name}")
         volumes = (
             {"/dev/log": {"bind": "/dev/log", "mode": "rw"}} if self._mount else {}
         )
@@ -122,7 +122,7 @@ class Container:
         )
 
 
-class ContainerHost:
+class ContainerContext:
     def __init__(
         self, runtime="docker", image="ch-d", tag="rhel7", count=1, mount_rhsm_log=False
     ):
