@@ -2,6 +2,10 @@ import random
 from uuid import uuid4
 
 
+class ContainerError(Exception):
+    """Exception raised for failed container management operations"""
+
+
 class DockerContainer:
     def __init__(self, image, tag, agent, ports):
         """Gather information needed to spin up a Docker-based container."""
@@ -120,6 +124,26 @@ class Container:
         return self._inst.execute(
             f"curl -ko /root/.ssh/authorized_keys https://{host or self._host}:9090/ssh/pubkey"
         )
+
+    def install_katello_agent(self):
+        """Installs katello agent on the Container.
+        :return: result of stdout of installation katello-agent and gofered process check.
+        :raises ContainerError: If katello-ca wasn't installed.
+
+        """
+        result = self._inst.execute("yum install -y katello-agent")
+
+        result += self._inst.execute('rpm -q katello-agent')
+        if result.return_code != 0:
+            raise ContainerError('Failed to install katello-agent')
+        gofer_check = self._inst.execute(
+            u'for i in {1..5}; do service goferd status '
+            u'&& exit 0; sleep 1; done; exit 1'
+        )
+        result += gofer_check
+        if gofer_check.return_code != 0:
+            raise ContainerError('katello-agent is not running')
+        return result
 
 
 class ContainerContext:
