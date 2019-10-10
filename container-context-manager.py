@@ -148,20 +148,20 @@ class Container:
 
 class ContainerContext:
     def __init__(
-        self, runtime="docker", image="ch-d", tag="rhel7", count=1, mount_rhsm_log=False
+        self, runtime="docker", image="ch-d", tag="rhel7", count=1, agent=False
     ):
         if isinstance(tag, list):
             self.container = {}
             for _tag in tag:
                 self.container[_tag] = [
-                    Container(runtime, image, _tag, mount_rhsm_log)
+                    Container(runtime, image, _tag, agent)
                     for _ in range(count)
                 ]
                 if len(self.container[_tag]) == 1:
                     self.container[_tag] = self.container[_tag][0]
         else:
             self.container = [
-                Container(runtime, image, tag, mount_rhsm_log) for _ in range(count)
+                Container(runtime, image, tag, agent) for _ in range(count)
             ]
 
     def __enter__(self):
