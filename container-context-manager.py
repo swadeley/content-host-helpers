@@ -134,14 +134,9 @@ class Container:
         result = self._inst.execute("yum install -y katello-agent")
 
         result += self._inst.execute('rpm -q katello-agent')
-        if result.return_code != 0:
+        if "Complete!" not in result:
             raise ContainerError('Failed to install katello-agent')
-        gofer_check = self._inst.execute(
-            u'for i in {1..5}; do service goferd status '
-            u'&& exit 0; sleep 1; done; exit 1'
-        )
-        result += gofer_check
-        if gofer_check.return_code != 0:
+        if not self._inst._mount:
             raise ContainerError('katello-agent is not running')
         return result
 
