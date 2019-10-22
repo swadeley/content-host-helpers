@@ -1,6 +1,6 @@
 import random
 from uuid import uuid4
-
+from robottelo.config import settings
 
 class ContainerError(Exception):
     """Exception raised for failed container management operations"""
@@ -37,6 +37,7 @@ class DockerContainer:
             command="tail -f /var/log/rhsm/rhsm.log",
         )
         self._client.start(container=self._inst)
+        self.name = self.execute("hostname")
 
     def delete(self):
         print(f"Deleting {self.name}")
@@ -67,7 +68,6 @@ class Container:
     def __init__(
         self, runtime="docker", image="ch-d", tag="rhel7", agent=False, ports=None
     ):
-        self.name = uuid4()
         if runtime == "docker":
             ContainerClass = DockerContainer
         # elif runtime == "podman":
@@ -76,6 +76,10 @@ class Container:
             print("Invalid runtime selection")
         self._inst = ContainerClass(image=image, tag=tag, agent=agent, ports=ports)
         self._logs = self._inst._logs
+
+    @property
+    def name(self):
+        return self._inst.name
 
     def delete(self):
         return self._inst.delete()
@@ -91,7 +95,7 @@ class Container:
 
     def register(
         self,
-        host,
+        host=settings.server.hostname,
         ak=None,
         org="Default_Organization",
         env="Library",
@@ -117,6 +121,8 @@ class Container:
             res += self._inst.execute(
                 f'{reg_command} --user="{auth[0]}" --password="{auth[1]}" --environment="{env}"'
             )
+        if "The system has been registered" not in res:
+            raise ContainerError('Unable to register to system' + '/n output from container:' + res)
         return res
 
     def rex_setup(self, host=None):
