@@ -2,13 +2,30 @@ import random
 from uuid import uuid4
 from robottelo.config import settings
 
+
 class ContainerError(Exception):
-    """Exception raised for failed container management operations"""
+    """Exception raised for failed container management operations."""
 
 
 class DockerContainer:
+    """
+    Gather information needed to spin up a Docker-based container.
+
+    Attributes:
+            image (init): The name of the container image to build from.
+            tag (init): The tag of the operating system to use.
+            agent (boolian): If set to True, prepares container for
+            katello-agent.
+    """
+
     def __init__(self, image, tag, agent, ports):
-        """Gather information needed to spin up a Docker-based container."""
+        """
+        Parameters:
+            image (init): The name of the container image to build from.
+            tag (init): The tag of the operating system to use.
+            agent (boolian): If set to True, prepares container for
+            katello-agent.
+        """
         import docker
         import docker.api.container
 
@@ -23,9 +40,17 @@ class DockerContainer:
         self._create()
 
     def _create(self):
+        """Creates containers for an instance of this class.
+
+        Mounts /dev/log as a read-write file system if katello-agent
+        is required.
+        Prints RHSM logs to stout.
+        Prints host name to stout after starting the container.
+        """
         print(f"Creating {self.tag} container named {self.name}")
         volumes = (
-            {"/dev/log": {"bind": "/dev/log", "mode": "rw"}} if self._mount else {}
+            {"/dev/log": {"bind": "/dev/log", "mode": "rw"}} if self._mount
+            else {}
         )
         self._inst = self._client.create_container(
             detach=False,
@@ -37,13 +62,21 @@ class DockerContainer:
             command="tail -f /var/log/rhsm/rhsm.log",
         )
         self._client.start(container=self._inst)
-        self.name = self.execute("hostname")
+        selfParameters.name = self.execute("hostname")
 
     def delete(self):
+        """Deletes all the containers belonging to an instance of this
+        class."""
         print(f"Deleting {self.name}")
         self._client.remove_container(self._inst, v=True, force=True)
 
     def execute(self, command):
+        """Executes a shell command.
+
+        Parameters:
+            command (init): A command to pass to the shell (CLI).
+
+        """
         exec_inst = self._client.exec_create(
             container=self._inst, cmd=command, stdout=True
         )
@@ -51,6 +84,13 @@ class DockerContainer:
         return self._client.exec_start(exec_id=exec_inst).decode()
 
     def logs(self, file="stdout", tailing=False):
+        """Enables logging to a file. Defaults to writing to stdout.
+
+        Parameters:
+            file (str): A file name to write to.
+            tailing (boolian): If set to True, tails the log file.
+
+        """
         if file == "stdout":
             current = self._client.logs(self._inst["Id"])
         else:
@@ -58,15 +98,31 @@ class DockerContainer:
         if isinstance(current, bytes):
             current = current.decode()
         self._logs[file] = current
-        return current.replace(self._logs.get(file, ""), "") if tailing else current
+        return current.replace(
+            self._logs.get(file, ""), "") if tailing else current
 
     def port(self):
+        """The port to use for SSH."""
         return self._client.port(self._inst["Id"], 22)[0]["HostPort"]
 
 
 class Container:
+    """Generic class to gather information for a Linux Container.
+
+    It enables separating generic and runtime specific code.
+    Calls a runtime specific class to build the container. Defaults to docker.
+
+    Attributes:
+        runtime (init): The Linux container runtime to use. Defaults to docker.
+        image (init): The name of the container image to build from.
+        tag (init): The tag of the operating system to use.
+        agent (boolian): If set to True, prepares container for katello-agent.
+        port (init): The port to use for SSH.
+
+    """
     def __init__(
-        self, runtime="docker", image="ch-d", tag="rhel7", agent=False, ports=None
+        self, runtime="docker", image="ch-d", tag="rhel7", agent=False,
+        ports=None
     ):
         if runtime == "docker":
             ContainerClass = DockerContainer
@@ -74,7 +130,8 @@ class Container:
         #     ContainerClass = PodmanContainer
         else:
             print("Invalid runtime selection")
-        self._inst = ContainerClass(image=image, tag=tag, agent=agent, ports=ports)
+        self._inst = ContainerClass(image=image, tag=tag, agent=agent,
+                                    ports=ports)
         self._logs = self._inst._logs
 
     @property
@@ -104,7 +161,8 @@ class Container:
     ):
         self._host = host
         res = self._inst.execute(
-            f"curl --insecure --output katello-ca-consumer-latest.noarch.rpm https://{host}/pub/katello-ca-consumer-latest.noarch.rpm"
+            f"curl --insecure --output katello-ca-consumer-latest.noarch.rpm \
+                https://{host}/pub/katello-ca-consumer-latest.noarch.rpm"
         )
         res += self._inst.execute(
             "yum -y localinstall katello-ca-consumer-latest.noarch.rpm"
@@ -119,21 +177,26 @@ class Container:
             res += self._inst.execute(f'{reg_command} --activationkey="{ak}"')
         else:
             res += self._inst.execute(
-                f'{reg_command} --user="{auth[0]}" --password="{auth[1]}" --environment="{env}"'
+                f'{reg_command} --user="{auth[0]}" --password="{auth[1]}" \
+                --environment="{env}"'
             )
         if "The system has been registered" not in res:
-            raise ContainerError('Unable to register to system' + '/n output from container:' + res)
+            raise ContainerError('Unable to register to system' +
+                                 '/n output from container:' + res)
         return res
 
     def rex_setup(self, host=None):
         self._inst.execute("mkdir /root/.ssh")
         return self._inst.execute(
-            f"curl -ko /root/.ssh/authorized_keys https://{host or self._host}:9090/ssh/pubkey"
+            f"curl -ko /root/.ssh/authorized_keys \
+                https://{host or self._host}:9090/ssh/pubkey"
         )
 
     def install_katello_agent(self):
         """Installs katello agent on the Container.
-        :return: result of stdout of installation katello-agent and gofered process check.
+
+        :return: result of stdout of installation katello-agent and goferd
+        process check.
         :raises ContainerError: If katello-ca wasn't installed.
 
         """
@@ -148,6 +211,16 @@ class Container:
 
 
 class ContainerContext:
+    """A context manager for managing containers.
+
+    Attributes:
+        runtime (init): The Linux container runtime to use. Defaults to docker.
+        image (init): The name of the container image to build from.
+        tag (init): The tag of the operating system to use.
+        count (init): The number to containers to build. Defaults to one.
+        agent (boolian): If set to True, prepares container for katello-agent.
+
+    """
     def __init__(
         self, runtime="docker", image="ch-d", tag="rhel7", count=1, agent=False
     ):
