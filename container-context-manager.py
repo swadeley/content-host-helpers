@@ -25,6 +25,10 @@ class DockerContainer:
             tag (init): The tag of the operating system to use.
             agent (boolian): If set to True, prepares container for
             katello-agent.
+
+        Returns:
+            A container object if tag and image supplied.
+
         """
         import docker
         import docker.api.container
@@ -62,7 +66,7 @@ class DockerContainer:
             command="tail -f /var/log/rhsm/rhsm.log",
         )
         self._client.start(container=self._inst)
-        selfParameters.name = self.execute("hostname")
+        self.name = self.execute("hostname")
 
     def delete(self):
         """Deletes all the containers belonging to an instance of this
@@ -118,6 +122,9 @@ class Container:
         tag (init): The tag of the operating system to use.
         agent (boolian): If set to True, prepares container for katello-agent.
         port (init): The port to use for SSH.
+
+    Returns:
+        A container object
 
     """
     def __init__(
@@ -219,6 +226,11 @@ class ContainerContext:
         tag (init): The tag of the operating system to use.
         count (init): The number to containers to build. Defaults to one.
         agent (boolian): If set to True, prepares container for katello-agent.
+
+    Returns:
+        A container object, if count == 1 and there is one tag.
+        A list of container objects, if count > 1 and there is one tag.
+        A dict with tags as keys and the above as values.
 
     """
     def __init__(
